@@ -1,0 +1,17 @@
+{
+  "name": "ott",
+  "version": "0.1.0",
+  "description": "OTT Queue task",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha -r ./test"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "inherits-js": "^0.1.1",
+    "lodash": "^3.10.1",
+    "uuid": "^2.0.1",
+    "yargs": "^3.30.0"
+  }
+}
