@@ -68,11 +68,17 @@ UDPTransport = Transport.extend(
                     }
                 });
 
-                socket.on("message", function(b, addr) {
-                    var envelope = self._parse(b);
-                    var msg = envelope.msg;
-                    var from = envelope.address;
-                    var pending, handler;
+                socket.on("message", function(b, rinfo) {
+                    var pending, handler, msg, from;
+
+                    from = _.pick(rinfo, "address", "family", "port");
+
+                    try {
+                        msg = self.protocol.unmarshal(b);
+                    } catch (err) {
+                        console.log('unmarshal error', err, b.toString());
+                        return
+                    }
 
                     if (msg instanceof Ack) {
                         // remove message id from the messages buffer
@@ -177,7 +183,7 @@ UDPTransport = Transport.extend(
         _sendAck: function(address, id) {
             this.ackStack.push({
                 address: address,
-                buf: this._prefixAddress(this.protocol.marshal(new Ack(id)))
+                buf: this.protocol.marshal(new Ack(id))
             });
         },
 
@@ -185,7 +191,7 @@ UDPTransport = Transport.extend(
             this.messageStack.push({
                 id:      id,
                 address: address,
-                buf:     this._prefixAddress(this.protocol.marshal(new Response(id, result, null)))
+                buf:     this.protocol.marshal(new Response(id, result, null))
             });
         },
 
@@ -195,7 +201,7 @@ UDPTransport = Transport.extend(
             this.messageStack.push({
                 id:      id,
                 address: address,
-                buf:     this._prefixAddress(this.protocol.marshal(new Response(id, null, error)))
+                buf:     this.protocol.marshal(new Response(id, null, error))
             });
         },
 
@@ -208,39 +214,12 @@ UDPTransport = Transport.extend(
             this.messageStack.push({
                 id:      id,
                 address: address,
-                buf:     this._prefixAddress(this.protocol.marshal(req))
+                buf:     this.protocol.marshal(req)
             });
 
             dfd = this.pending[id] = deferOn(timeout);
 
             return dfd.promise;
-        },
-
-        _prefixAddress: function(buf) {
-            var addr;
-
-            addr = new Buffer(84);
-            addr.fill(0);
-            addr.write(this.address.family, 0);
-            addr.write(this.address.address, 4);
-            addr.write(this.address.port.toString(), 68);
-
-            return Buffer.concat([addr, buf]);
-        },
-
-        _parse: function(buf) {
-            var type = buf.slice(0, 4);
-            var address = buf.slice(4, 68);
-            var port = buf.slice(68);
-
-            return {
-                address: {
-                    type: type.toString(),
-                    address: address.slice(0, address.indexOf(0)).toString(),
-                    port: parseInt(port.slice(0, port.indexOf(0)).toString(), 10)
-                },
-                msg: this.protocol.unmarshal(buf.slice(84))
-            };
         }
     }
 );
