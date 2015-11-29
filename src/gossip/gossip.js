@@ -4,7 +4,13 @@ var uuid = require("uuid");
 var _ = require("lodash");
 var inherits = require("inherits-js");
 var assert = require("assert");
-var Transport = require("./transport/transport");
+var defer = require("../util/util").defer;
+var Transport = require("../net/transport/transport");
+
+const METHOD_SYNC = "g_sync";
+const METHOD_PING = "g_ping";
+const METHOD_HELLO = "g_hello";
+const METHOD_EVENT = "g_event";
 
 /**
  * Agent
@@ -24,13 +30,14 @@ var Agent = inherits(EventEmitter,
 
             this.transport = transport;
             this.peers = [];
-            this.state = 0;
+            this.stateId = 0;
         },
 
         initialize: function() {
-            this.transport.handle("sync", this._handleSync.bind(this));
-            this.transport.handle("ping", this._handlePing.bind(this));
-            this.transport.handle("hello", this._handleHello.bind(this));
+            this.transport.handle(METHOD_SYNC,  this._handleSync.bind(this));
+            this.transport.handle(METHOD_PING,  this._handlePing.bind(this));
+            this.transport.handle(METHOD_HELLO, this._handleHello.bind(this));
+            this.transport.handle(METHOD_EVENT, this._handleEvent.bind(this));
 
             return Promise.all([
                 this.transport.initialize(),
@@ -38,34 +45,52 @@ var Agent = inherits(EventEmitter,
             ]);
         },
 
-        add: function(address) {
+        getPeers: function() {
+            return this.peers;
+        },
+
+        join: function(address) {
             var self = this;
             var peer;
 
             if (this._isKnown(address)) {
-                return null
+                return Promise.reject(new Error("known peer"));
             }
 
             peer = {
                 address: _.pick(address, "address", "port"),
                 status:  false,
-                state:   0
+                stateId: 0
             };
 
-            self.peers.push(peer);
-            self.state++;
-            console.log("got new peer", JSON.stringify(peer));
-
-            return peer;
+            return this._greet(peer)
+                .then(function() {
+                    self.peers.push(peer);
+                    self._updateState();
+                })
+                .catch(function(err){
+                    return Promise.reject(new Error("could not join unfriendly host: " + address.address + ":" + address.port));
+                })
         },
 
-        join: function(address) {
-            var peer = this.add(address);
-            if (!peer) {
-                return Promise.resolve();
-            }
+        broadcast: function(msg) {
+            var self = this;
 
-            return this._greet(peer);
+            return Promise.all(this.peers.map(function(peer) {
+                return self.transport.call(peer.address, METHOD_EVENT, msg)
+                    .then(function(result) {
+                        return { result: result };
+                    })
+                    .catch(function(err) {
+                        return { error: err };
+                    })
+            }));
+        },
+
+        _updateState: function() {
+            this.stateId++;
+            console.log('this.peers', this.peers);
+            this.emit("change");
         },
 
         _initTimers: function() {
@@ -77,28 +102,31 @@ var Agent = inherits(EventEmitter,
                     if (!peer) return;
 
                     self._ping(peer);
-                }, _.random(500, 1000));
+                }, _.random(50, 100));
 
+                var syncedId = -1;
                 self.syncIntervalID = setInterval(function() {
-                    var peer = self._getPeer();
-                    if (!peer) return;
+                    if (syncedId != self.stateId) {
+                        syncedId = self.stateId;
 
-                    self._sync(peer);
-                }, _.random(500, 1000));
+                        var peer = self._getPeer();
+                        if (!peer) return;
+
+                        self._sync(peer);
+                    }
+                }, 50);
 
                 resolve();
             });
         },
 
         _isKnown: function(a) {
-            var addr = this.transport.getAddress();
-
-            if (a.address == addr.address && a.port == addr.port) {
+            if (eq(a, this.transport.getAddress())) {
                 return true;
             }
 
             return _.any(this.peers, function(p) {
-                return p.address.address == a.address && p.address.port == a.port;
+                return eq(p.address, a);
             });
         },
 
@@ -109,14 +137,17 @@ var Agent = inherits(EventEmitter,
             // moving this peer to the warning list and send this list
             // to the others peers
             // if they are think, that this peer is dead - remove it
-            return this.transport.call(peer.address, "ping", {})
+            return this.transport.call(peer.address, METHOD_PING, {})
                 .then(function() {
                     //peer.status = true;
                 })
                 .catch(function(err) {
                     //peer.status = false;
-                    _.remove(self.peers, peer);
-                    console.log("removed peer", JSON.stringify(peer), self.peers.length);
+                    var dead = _.remove(self.peers, peer);
+                    if (dead.length > 0) {
+                        console.log("removed peer", dead);
+                        self._updateState();
+                    }
                 });
         },
 
@@ -127,13 +158,13 @@ var Agent = inherits(EventEmitter,
         _sync: function(peer) {
             var self = this;
 
-            return this.transport.call(peer.address, "sync", {
+            return this.transport.call(peer.address, METHOD_SYNC, {
                     state: {
                         peers: this.peers
                     }
                 })
                 .then(function() {
-                    peer.state = self.state;
+                    peer.stateId = self.stateId;
                 })
         },
         /**
@@ -141,7 +172,7 @@ var Agent = inherits(EventEmitter,
          * @returns {Promise}
          */
         _greet: function(peer) {
-            return this.transport.call(peer.address, "hello", {
+            return this.transport.call(peer.address, METHOD_HELLO, {
                 address: this.transport.getAddress()
             });
         },
@@ -161,8 +192,21 @@ var Agent = inherits(EventEmitter,
         },
 
         _handleHello: function(params) {
-            this.add(params.address);
+            var self = this;
+
+            setImmediate(function() {
+                self.join(params.address);
+            });
+
             return Promise.resolve();
+        },
+
+        _handleEvent: function(msg) {
+            var dfd = defer();
+
+            this.emit("message", msg, dfd.resolve, dfd.reject);
+
+            return dfd.promise;
         },
 
         _getPeer: function() {
@@ -179,5 +223,9 @@ var Agent = inherits(EventEmitter,
         }
     }
 );
+
+function eq(a, b) {
+    return a.address == b.address && a.port == b.port
+}
 
 module.exports = Agent;

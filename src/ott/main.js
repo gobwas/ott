@@ -23,13 +23,12 @@ var peers = (argv.peers || "").split(",").map(addr).filter(function(obj) { retur
 // initialize gossip protocol agent
 // it helps to discover other nodes in system
 // and get consistency of system state
-var gossipAgent = cp.fork(__dirname + "/gossip.js");
+var agent = cp.fork(__dirname + "/system.js");
 comm
-    .call(gossipAgent, "init", { peers: peers, listen: addr(argv.listen) })
+    .call(agent, "init", { peers: peers, listen: addr(argv.listen) })
     .then(function() {
         console.log('init agent ok');
     })
     .catch(function(err) {
-        console.log('init agent err', err);
+        console.log('init agent err', err.stack);
     });
-

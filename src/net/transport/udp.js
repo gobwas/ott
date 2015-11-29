@@ -6,6 +6,7 @@ var Request = types.Request;
 var Response = types.Response;
 var Error = types.Error;
 var uuid = require("uuid");
+var deferOn = require("../../util/util").deferTimeout;
 
 var dgram = require("dgram");
 var UDPTransport;
@@ -223,21 +224,5 @@ UDPTransport = Transport.extend(
         }
     }
 );
-
-
-function deferOn(timeout) {
-    var dfd = {};
-
-    dfd.promise = new Promise(function(resolve, reject) {
-        dfd.resolve = _.once(resolve);
-        dfd.reject = _.once(reject);
-
-        setTimeout(function() {
-            reject("timed out");
-        }, timeout);
-    });
-
-    return dfd;
-}
 
 module.exports = UDPTransport;

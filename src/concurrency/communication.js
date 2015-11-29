@@ -31,7 +31,7 @@ exports.listen = function(process, handler) {
                 result: null,
                 error:  {
                     code: err.code || -1,
-                    message: err.message || "Unknown error"
+                    message: err.message || "Unknown comm error"
                 }
             });
         }
