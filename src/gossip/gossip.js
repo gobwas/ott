@@ -6,6 +6,7 @@ var inherits = require("inherits-js");
 var assert = require("assert");
 var defer = require("../util/util").defer;
 var Transport = require("../net/transport/transport");
+var log = require("debug")("gossip");
 
 const METHOD_SYNC = "g_sync";
 const METHOD_PING = "g_ping";
@@ -39,10 +40,11 @@ var Agent = inherits(EventEmitter,
             this.transport.handle(METHOD_HELLO, this._handleHello.bind(this));
             this.transport.handle(METHOD_EVENT, this._handleEvent.bind(this));
 
-            return Promise.all([
-                this.transport.initialize(),
-                this._initTimers()
-            ]);
+            return Promise
+                .all([
+                    this.transport.initialize(),
+                    this._initTimers()
+                ]);
         },
 
         getPeers: function() {
@@ -53,23 +55,25 @@ var Agent = inherits(EventEmitter,
             var self = this;
             var peer;
 
-            if (this._isKnown(address)) {
-                return Promise.reject(new Error("known peer"));
+            if (self._isKnown(address)) {
+                return Promise.resolve();
             }
 
             peer = {
-                address: _.pick(address, "address", "port"),
+                address: address,
                 status:  false,
                 stateId: 0
             };
 
+            self.peers.push(peer);
+            self._updateState();
+
             return this._greet(peer)
                 .then(function() {
-                    self.peers.push(peer);
-                    self._updateState();
+                    return self._sync(peer);
                 })
                 .catch(function(err){
-                    return Promise.reject(new Error("could not join unfriendly host: " + address.address + ":" + address.port));
+                    return Promise.reject(new Error("could not join unfriendly host: " + address + " (" + err + ")"));
                 })
         },
 
@@ -89,7 +93,7 @@ var Agent = inherits(EventEmitter,
 
         _updateState: function() {
             this.stateId++;
-            console.log('this.peers', this.peers);
+            log('this.peers: %s', this.peers.map(function(p) {return p.address;}).join(",\n"));
             this.emit("change");
         },
 
@@ -121,12 +125,12 @@ var Agent = inherits(EventEmitter,
         },
 
         _isKnown: function(a) {
-            if (eq(a, this.transport.getAddress())) {
+            if (a == this.transport.getAddress()) {
                 return true;
             }
 
             return _.any(this.peers, function(p) {
-                return eq(p.address, a);
+                return p.address == a;
             });
         },
 
@@ -145,7 +149,7 @@ var Agent = inherits(EventEmitter,
                     //peer.status = false;
                     var dead = _.remove(self.peers, peer);
                     if (dead.length > 0) {
-                        console.log("removed peer", dead);
+                        log("removed peer", dead);
                         self._updateState();
                     }
                 });
@@ -172,9 +176,12 @@ var Agent = inherits(EventEmitter,
          * @returns {Promise}
          */
         _greet: function(peer) {
-            return this.transport.call(peer.address, METHOD_HELLO, {
-                address: this.transport.getAddress()
-            });
+            //var self = this;
+
+            return this.transport
+                .call(peer.address, METHOD_HELLO, {
+                    address: this.transport.getAddress()
+                });
         },
 
         _handleSync: function(params) {
@@ -204,6 +211,7 @@ var Agent = inherits(EventEmitter,
         _handleEvent: function(msg) {
             var dfd = defer();
 
+            // todo error here
             this.emit("message", msg, dfd.resolve, dfd.reject);
 
             return dfd.promise;

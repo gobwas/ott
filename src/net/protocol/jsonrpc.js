@@ -54,7 +54,7 @@ function unmarshal(buffer) {
             return new Response(obj.id, obj.result, obj.error);
         }
         default: {
-            throw new Error("Could not unmarshal");
+            throw new Error("Could not unmarshal: " + buffer.toString());
         }
     }
 }

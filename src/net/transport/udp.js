@@ -4,7 +4,7 @@ var types = require("../protocol/types");
 var Ack = types.Ack;
 var Request = types.Request;
 var Response = types.Response;
-var Error = types.Error;
+var ErrorMsg = types.Error;
 var uuid = require("uuid");
 var deferOn = require("../../util/util").deferTimeout;
 
@@ -131,15 +131,15 @@ UDPTransport = Transport.extend(
                     resolved = true;
 
                     self.socket = socket;
-                    self.address = address;
+                    self.address = address.address + ":" + address.port;
 
-                    console.log("gossip listening " + address.family + " " + address.address + ":" + address.port);
+                    console.log("gossip listening " + self.address);
 
                     resolve();
                 });
 
-                if (_.isObject(self.options.address)) {
-                    socket.bind(self.options.address);
+                if (_.isString(self.options.address)) {
+                    socket.bind(toAddr(self.options.address));
                 } else {
                     socket.bind();
                 }
@@ -165,11 +165,11 @@ UDPTransport = Transport.extend(
             return ack.concat(msg).map(function(def) {
                 return new Promise(function(resolve, reject) {
                     var buf = def.buf;
-                    var peer = def.address;
+                    var addr = toAddr(def.address);
 
                     def.attempt++;
 
-                    self.socket.send(buf, 0, buf.length, peer.port, peer.address, function(err) {
+                    self.socket.send(buf, 0, buf.length, addr.port, addr.address, function(err) {
                         if (err) {
                             console.log('socket send error', err);
                             return reject(err);
@@ -197,7 +197,7 @@ UDPTransport = Transport.extend(
         },
 
         _sendError: function(address, id, err, code) {
-            var error = new Error(code || -1, err || "unknown error");
+            var error = new ErrorMsg(code || -1, err || "unknown error");
 
             this.messageStack.push({
                 id:      id,
@@ -224,5 +224,21 @@ UDPTransport = Transport.extend(
         }
     }
 );
+
+
+function toAddr(str) {
+    var addr;
+
+    if (!_.isString(str) || str.indexOf(":") == -1) {
+        throw new Error("could not parse");
+    }
+
+    addr = _.trim(str).split(":");
+
+    return {
+        address: addr[0],
+        port:    parseInt(addr[1], 10)
+    }
+}
 
 module.exports = UDPTransport;

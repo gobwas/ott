@@ -2,6 +2,7 @@ var inherits = require("inherits-js");
 var uuid = require("uuid");
 var EventEmitter = require("events").EventEmitter;
 var _ = require("lodash");
+var log = require("debug")("raft");
 var Raft;
 
 const STATE_FOLLOWER  = 0;
@@ -11,7 +12,9 @@ const STATE_LEADER    = 2;
 const MSG_VOTE_REQUEST = 0;
 const MSG_HEARTBEAT    = 1;
 
-
+exports.STATE_FOLLOWER = STATE_FOLLOWER;
+exports.STATE_CANDIDATE = STATE_CANDIDATE;
+exports.STATE_LEADER = STATE_LEADER;
 
 Raft = inherits(EventEmitter,
     /**
@@ -83,11 +86,17 @@ Raft = inherits(EventEmitter,
 
         _restartElectionTimeout: function() {
             clearTimeout(this.electionTimeoutID);
-            this.electionTimeoutID = setTimeout(this._changeState.bind(this, STATE_CANDIDATE), _.random(150, 350));
+            this.electionTimeoutID = setTimeout(
+                this._changeState.bind(this, STATE_CANDIDATE),
+                _.random(this.options.election_min, this.options.election_max)
+            );
         },
 
         _startHeartbeat: function() {
-            this.heartbeatIntervalID = setInterval(this._heartbeat.bind(this), _.random(50, 100));
+            this.heartbeatIntervalID = setInterval(
+                this._heartbeat.bind(this),
+                _.random(this.options.heartbeat_min, this.options.heartbeat_max)
+            );
         },
 
         _heartbeat: function() {
@@ -101,29 +110,30 @@ Raft = inherits(EventEmitter,
         _startElection: function() {
             var self = this;
 
-            console.log("starting election..");
+            log("starting election..");
+            var quorum = this.quorum;
 
             this
                 .broadcast({ type: MSG_VOTE_REQUEST, term: uuid.v4() })
                 .then(function(results) {
-                    console.log('election results', results);
                     var ok = _.filter(results, function(r) {
                         return !r.error && !!r.result;
                     });
 
-                    if (self.quorum == 0 || ok.length > (self.quorum / 2)) {
-                        console.log('i am a leader! (' + ok.length + ' from ' + self.quorum + ')');
+                    if (quorum == 0 || ok.length > (quorum / 2)) {
+                        log("i am the leader: %d from %d", ok.length, quorum);
                         self._changeState(STATE_LEADER);
                     } else {
-                        console.log('i am still follower =( (' + ok.length + ' from ' + self.quorum + ')');
+                        log("i am still follower: %d from %d", ok.length, quorum);
                         self._changeState(STATE_FOLLOWER);
                     }
-                });
+                })
+                .catch(function(err) {
+                    log('broadcast error: %s', err.stack);
+                })
         },
 
         _changeState: function(state) {
-            console.log("changing state to", state);
-
             switch (state) {
                 case STATE_FOLLOWER: {
                     this._restartElectionTimeout();
@@ -152,8 +162,14 @@ Raft = inherits(EventEmitter,
             return inherits(this, p, s);
         },
 
-        DEFAULTS: {}
+        DEFAULTS: {
+            heartbeat_min: 50,
+            heartbeat_max: 100,
+
+            election_min: 250,
+            election_max: 450
+        }
     }
 );
 
-module.exports = Raft;
+exports.Raft = Raft;
