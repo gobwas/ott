@@ -8,6 +8,7 @@ var Response = types.Response;
 var ErrorMsg = types.Error;
 var deferTimeout = require("../../util/util").deferTimeout;
 var uuid = require("uuid");
+var log = require("debug")("transport");
 var RedisTransport;
 
 const MSG_INITIAL = "initial";
@@ -25,7 +26,7 @@ RedisTransport = Transport.extend(
     {
         constructor: function(proto, options) {
             Transport.prototype.constructor.apply(this, arguments);
-            this.address = options.address || uuid.v4();
+            this.address = options.address || uuid.v4().split("-")[0];
             this.handlers = {};
             this.pending = {};
         },
@@ -70,10 +71,9 @@ RedisTransport = Transport.extend(
                                     return reject(err);
                                 }
 
+                                log("listening %s", self.address);
                                 resolve();
                             });
-
-                            resolve();
                         });
                     });
                 })

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 var Gossip = require("../gossip/gossip");
 var Raft = require("../raft/raft").Raft;
 //var UDPTransport = require("../net/transport/udp");

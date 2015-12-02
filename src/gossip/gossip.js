@@ -93,7 +93,7 @@ var Agent = inherits(EventEmitter,
 
         _updateState: function() {
             this.stateId++;
-            log('this.peers: %s', this.peers.map(function(p) {return p.address;}).join(",\n"));
+            log('this.peers: %s', this.peers.map(function(p) {return p.address;}).join(", "));
             this.emit("change");
         },
 

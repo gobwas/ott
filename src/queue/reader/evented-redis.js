@@ -65,6 +65,7 @@ RedisReader = QueueReader.extend(
                                         log('after timeout bypass');
                                         doPop();
                                     }, self.options.repop_timeout);
+                                    bypassCount = 0;
                                 }
                             });
                     }
